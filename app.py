@@ -1,291 +1,338 @@
-from flask import Flask, jsonify, request, render_template_string
-from models import Product, Cart, Order
+"""
+Магазин принтеров - Flask приложение
+"""
+
+from flask import Flask, jsonify, request
 
 app = Flask(__name__)
 
-# Инициализация данных
-products = [
-    Product(1, "Ноутбук Dell XPS", 150000, "электроника", 10),
-    Product(2, "Книга 'Python для начинающих'", 1500, "книги", 25),
-    Product(3, "Кофеварка", 7500, "бытовая техника", 5),
-    Product(4, "Футболка Python", 1200, "одежда", 50),
-    Product(5, "Наушники Sony", 8500, "электроника", 15)
+# ==================== МОДЕЛИ ====================
+
+class Printer:
+    """Класс принтера"""
+    def __init__(self, id, name, printer_type, price, color, speed, stock):
+        self.id = id
+        self.name = name
+        self.type = printer_type  # laser, inkjet, multifunctional
+        self.price = price
+        self.color = color  # True/False
+        self.speed = speed  # страниц в минуту
+        self.stock = stock
+
+    def to_dict(self):
+        """Преобразовать в словарь"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'type': self.type,
+            'price': self.price,
+            'color': self.color,
+            'speed': self.speed,
+            'stock': self.stock
+        }
+
+# ==================== ДАННЫЕ ====================
+
+# База данных принтеров
+printers_db = [
+    Printer(1, "HP LaserJet Pro M404dn", "laser", 25000, False, 40, 8),
+    Printer(2, "Canon PIXMA G1420", "inkjet", 12000, True, 15, 12),
+    Printer(3, "Epson L805", "inkjet", 32000, True, 12, 5),
+    Printer(4, "Xerox B205", "laser", 18000, False, 35, 0),  # Нет в наличии
+    Printer(5, "Brother HL-1212W", "laser", 15000, False, 20, 10),
+    Printer(6, "HP OfficeJet Pro 8025", "multifunctional", 35000, True, 25, 6),
+    Printer(7, "Canon i-SENSYS LBP623Cdw", "laser", 45000, True, 28, 3),
 ]
 
-cart = Cart()
+# Корзина пользователей (user_id: [items])
+carts = {}
+
+# Заказы
 orders = []
+order_counter = 1
 
-# HTML шаблоны
-HOME_HTML = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Магазин</title>
-</head>
-<body>
-    <h1>🛒 Онлайн магазин</h1>
-    <p>Добро пожаловать в наш магазин!</p>
-    <ul>
-        <li><a href="/api/products">Все товары (API)</a></li>
-        <li><a href="/cart">Корзина</a></li>
-        <li><a href="/orders">Заказы</a></li>
-        <li><a href="/stats">Статистика</a></li>
-    </ul>
-</body>
-</html>
-'''
-
-CART_HTML = '''
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Корзина</title>
-</head>
-<body>
-    <h1>🛒 Ваша корзина</h1>
-    {% if items %}
-        <ul>
-        {% for item in items %}
-            <li>{{ item.name }} - {{ item.price }} руб. (x{{ item.quantity }})</li>
-        {% endfor %}
-        </ul>
-        <p><strong>Итого: {{ total }} руб.</strong></p>
-        <form action="/api/checkout" method="POST">
-            <button type="submit">Оформить заказ</button>
-        </form>
-    {% else %}
-        <p>Корзина пуста</p>
-    {% endif %}
-    <a href="/">На главную</a>
-</body>
-</html>
-'''
-
+# ==================== API ENDPOINTS ====================
 
 @app.route('/')
 def home():
     """Главная страница"""
-    return render_template_string(HOME_HTML)
+    return '''
+    <h1>🖨️ PrintMaster Printer Store</h1>
+    <p>Best printers at best prices!</p>
+    <h3>Available endpoints:</h3>
+    <ul>
+        <li><a href="/api/printers">All printers</a> (GET)</li>
+        <li><a href="/api/printers/1">Printer by ID</a> (GET /api/printers/{id})</li>
+        <li><a href="/api/printers/type/laser">Printers by type</a> (GET /api/printers/type/{type})</li>
+        <li><a href="/api/printers/available">Only available</a> (GET)</li>
+        <li><a href="/api/search?q=hp">Search printers</a> (GET /api/search?q=query)</li>
+        <li><a href="/api/cart/1">User cart</a> (GET /api/cart/{user_id})</li>
+        <li><a href="/api/stats">Store statistics</a> (GET)</li>
+    </ul>
+    <h3>API examples:</h3>
+    <pre>
+    # Add to cart:
+    POST /api/cart/add
+    {"user_id": 1, "printer_id": 1, "quantity": 1}
 
+    # Checkout:
+    POST /api/checkout
+    {"user_id": 1}
+    </pre>
+    '''
 
-@app.route('/api/products', methods=['GET'])
-def get_products():
-    """Получить все товары"""
-    return jsonify([p.to_dict() for p in products])
+@app.route('/api/printers', methods=['GET'])
+def get_printers():
+    """Получить все принтеры"""
+    return jsonify([printer.to_dict() for printer in printers_db])
 
+@app.route('/api/printers/<int:printer_id>', methods=['GET'])
+def get_printer(printer_id):
+    """Получить принтер по ID"""
+    printer = next((p for p in printers_db if p.id == printer_id), None)
+    if printer:
+        return jsonify(printer.to_dict())
+    return jsonify({'error': 'Принтер не найден'}), 404
 
-@app.route('/api/products/<int:product_id>', methods=['GET'])
-def get_product(product_id):
-    """Получить товар по ID"""
-    product = next((p for p in products if p.id == product_id), None)
-    if product:
-        return jsonify(product.to_dict())
-    return jsonify({'error': 'Товар не найден'}), 404
+@app.route('/api/printers/type/<string:printer_type>', methods=['GET'])
+def get_printers_by_type(printer_type):
+    """Получить принтеры по типу"""
+    filtered = [p for p in printers_db if p.type == printer_type]
+    return jsonify([p.to_dict() for p in filtered])
 
+@app.route('/api/printers/available', methods=['GET'])
+def get_available_printers():
+    """Получить только принтеры в наличии"""
+    available = [p for p in printers_db if p.stock > 0]
+    return jsonify([p.to_dict() for p in available])
 
-@app.route('/api/products', methods=['POST'])
-def add_product():
-    """Добавить новый товар (для администратора)"""
-    data = request.get_json()
+@app.route('/api/search', methods=['GET'])
+def search_printers():
+    """Поиск принтеров по названию"""
+    query = request.args.get('q', '').lower()
+    if not query:
+        return jsonify({'error': 'Укажите поисковый запрос'}), 400
 
-    if not data or 'name' not in data or 'price' not in data:
-        return jsonify({'error': 'Необходимы name и price'}), 400
+    results = [p for p in printers_db if query in p.name.lower()]
+    return jsonify([p.to_dict() for p in results])
 
-    new_id = max(p.id for p in products) + 1 if products else 1
-    name = data['name']
-    price = data['price']
-    category = data.get('category', 'другое')
-    stock = data.get('stock', 0)
+@app.route('/api/cart/<int:user_id>', methods=['GET'])
+def get_cart(user_id):
+    """Получить корзину пользователя"""
+    if user_id not in carts:
+        carts[user_id] = []
 
-    new_product = Product(new_id, name, price, category, stock)
-    products.append(new_product)
+    cart_items = carts[user_id]
+    total = sum(item['price'] * item['quantity'] for item in cart_items)
 
-    return jsonify({'message': 'Товар добавлен', 'product': new_product.to_dict()}), 201
-
-
-@app.route('/api/cart', methods=['GET'])
-def get_cart():
-    """Получить содержимое корзины"""
-    return jsonify(cart.to_dict())
-
+    return jsonify({
+        'user_id': user_id,
+        'items': cart_items,
+        'total': total,
+        'item_count': len(cart_items)
+    })
 
 @app.route('/api/cart/add', methods=['POST'])
 def add_to_cart():
-    """Добавить товар в корзину"""
+    """Добавить принтер в корзину"""
     data = request.get_json()
 
-    if not data or 'product_id' not in data:
-        return jsonify({'error': 'Необходим product_id'}), 400
+    # Проверка данных
+    if not data:
+        return jsonify({'error': 'Нет данных'}), 400
 
-    product_id = data['product_id']
+    required_fields = ['user_id', 'printer_id']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Отсутствует поле: {field}'}), 400
+
+    user_id = data['user_id']
+    printer_id = data['printer_id']
     quantity = data.get('quantity', 1)
 
-    product = next((p for p in products if p.id == product_id), None)
-    if not product:
-        return jsonify({'error': 'Товар не найден'}), 404
+    # Найти принтер
+    printer = next((p for p in printers_db if p.id == printer_id), None)
+    if not printer:
+        return jsonify({'error': 'Принтер не найден'}), 404
 
-    if product.stock < quantity:
-        return jsonify({'error': 'Недостаточно товара на складе'}), 400
+    # Проверить наличие
+    if printer.stock < quantity:
+        return jsonify({'error': f'Недостаточно принтеров "{printer.name}" на складе'}), 400
 
-    # Добавляем в корзину
-    cart.add_item(product, quantity)
+    # Инициализировать корзину, если нужно
+    if user_id not in carts:
+        carts[user_id] = []
 
-    return jsonify({'message': 'Товар добавлен в корзину', 'cart': cart.to_dict()})
+    # Проверить, есть ли уже такой принтер в корзине
+    for item in carts[user_id]:
+        if item['printer_id'] == printer_id:
+            item['quantity'] += quantity
+            break
+    else:
+        carts[user_id].append({
+            'printer_id': printer_id,
+            'name': printer.name,
+            'price': printer.price,
+            'quantity': quantity,
+            'type': printer.type
+        })
 
+    return jsonify({
+        'message': 'Принтер добавлен в корзину',
+        'cart': carts[user_id]
+    })
 
 @app.route('/api/cart/remove', methods=['POST'])
 def remove_from_cart():
-    """Удалить товар из корзины"""
+    """Удалить принтер из корзины"""
     data = request.get_json()
 
-    if not data or 'product_id' not in data:
-        return jsonify({'error': 'Необходим product_id'}), 400
+    if not data or 'user_id' not in data or 'printer_id' not in data:
+        return jsonify({'error': 'Нужны user_id и printer_id'}), 400
 
-    product_id = data['product_id']
+    user_id = data['user_id']
+    printer_id = data['printer_id']
 
-    product = next((p for p in products if p.id == product_id), None)
-    if not product:
-        return jsonify({'error': 'Товар не найден'}), 404
+    if user_id not in carts:
+        return jsonify({'error': 'Корзина не найдена'}), 404
 
-    cart.remove_item(product_id)
+    # Удалить принтер из корзины
+    carts[user_id] = [item for item in carts[user_id] if item['printer_id'] != printer_id]
 
-    return jsonify({'message': 'Товар удален из корзины', 'cart': cart.to_dict()})
-
+    return jsonify({
+        'message': 'Принтер удален из корзины',
+        'cart': carts[user_id]
+    })
 
 @app.route('/api/checkout', methods=['POST'])
 def checkout():
     """Оформить заказ"""
-    if not cart.items:
+    global order_counter
+
+    data = request.get_json()
+
+    if not data or 'user_id' not in data:
+        return jsonify({'error': 'Нужен user_id'}), 400
+
+    user_id = data['user_id']
+
+    # Проверить корзину
+    if user_id not in carts or not carts[user_id]:
         return jsonify({'error': 'Корзина пуста'}), 400
 
-    # Создаем заказ
-    order = Order(len(orders) + 1, cart.items.copy(), cart.get_total())
+    # Проверить наличие всех товаров
+    for item in carts[user_id]:
+        printer = next((p for p in printers_db if p.id == item['printer_id']), None)
+        if not printer or printer.stock < item['quantity']:
+            return jsonify({'error': f'Недостаточно "{printer.name}" на складе'}), 400
 
-    # Обновляем запасы
-    for item in cart.items:
-        product = next(p for p in products if p.id == item['product_id'])
-        product.stock -= item['quantity']
+    # Создать заказ
+    order = {
+        'order_id': order_counter,
+        'user_id': user_id,
+        'items': carts[user_id].copy(),
+        'total': sum(item['price'] * item['quantity'] for item in carts[user_id]),
+        'status': 'обрабатывается'
+    }
 
-    # Добавляем заказ в список
+    # Обновить остатки
+    for item in carts[user_id]:
+        printer = next(p for p in printers_db if p.id == item['printer_id'])
+        printer.stock -= item['quantity']
+
+    # Сохранить заказ
     orders.append(order)
+    order_counter += 1
 
-    # Очищаем корзину
-    cart.clear()
+    # Очистить корзину
+    carts[user_id] = []
 
-    return jsonify({'message': 'Заказ оформлен', 'order': order.to_dict()})
-
+    return jsonify({
+        'message': 'Заказ успешно оформлен',
+        'order': order
+    })
 
 @app.route('/api/orders', methods=['GET'])
 def get_orders():
-    """Получить все заказы"""
-    return jsonify([order.to_dict() for order in orders])
+    """Получить все заказы (для администратора)"""
+    return jsonify(orders)
 
+@app.route('/api/orders/<int:order_id>', methods=['GET'])
+def get_order(order_id):
+    """Получить заказ по ID"""
+    order = next((o for o in orders if o['order_id'] == order_id), None)
+    if order:
+        return jsonify(order)
+    return jsonify({'error': 'Заказ не найден'}), 404
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Получить статистику магазина"""
-    total_products = len(products)
+    """Статистика магазина"""
+    total_printers = len(printers_db)
+    available_printers = sum(1 for p in printers_db if p.stock > 0)
+    total_stock = sum(p.stock for p in printers_db)
     total_orders = len(orders)
-    total_revenue = sum(order.total for order in orders)
-    total_items_sold = sum(sum(item['quantity'] for item in order.items) for order in orders)
+    total_revenue = sum(order['total'] for order in orders)
 
-    # Самые популярные категории
-    category_sales = {}
+    # Статистика по типам
+    type_stats = {}
+    for printer in printers_db:
+        if printer.type not in type_stats:
+            type_stats[printer.type] = {'count': 0, 'stock': 0}
+        type_stats[printer.type]['count'] += 1
+        type_stats[printer.type]['stock'] += printer.stock
+
+    # Самый популярный тип в заказах
+    popular_types = {}
     for order in orders:
-        for item in order.items:
-            product = next(p for p in products if p.id == item['product_id'])
-            category_sales[product.category] = category_sales.get(product.category, 0) + item['quantity']
+        for item in order['items']:
+            printer = next(p for p in printers_db if p.id == item['printer_id'])
+            popular_types[printer.type] = popular_types.get(printer.type, 0) + item['quantity']
 
-    most_popular_category = max(category_sales.items(), key=lambda x: x[1])[0] if category_sales else 'нет продаж'
+    most_popular = max(popular_types.items(), key=lambda x: x[1])[0] if popular_types else 'нет заказов'
 
     return jsonify({
-        'total_products': total_products,
+        'store_name': 'PrintMaster',
+        'total_printers': total_printers,
+        'available_printers': available_printers,
+        'total_stock': total_stock,
         'total_orders': total_orders,
         'total_revenue': total_revenue,
-        'total_items_sold': total_items_sold,
-        'most_popular_category': most_popular_category,
+        'type_statistics': type_stats,
+        'most_popular_type': most_popular,
         'average_order_value': round(total_revenue / total_orders, 2) if total_orders > 0 else 0
     })
 
+@app.route('/api/admin/add_printer', methods=['POST'])
+def add_printer():
+    """Добавить новый принтер (админ)"""
+    data = request.get_json()
 
-@app.route('/cart')
-def cart_page():
-    """HTML страница корзины"""
-    cart_data = cart.to_dict()
-    return render_template_string(CART_HTML,
-                                  items=cart_data['items'],
-                                  total=cart_data['total'])
+    required_fields = ['name', 'type', 'price', 'color', 'speed', 'stock']
+    for field in required_fields:
+        if field not in data:
+            return jsonify({'error': f'Отсутствует поле: {field}'}), 400
 
+    # Генерируем ID
+    new_id = max(p.id for p in printers_db) + 1 if printers_db else 1
 
-@app.route('/orders')
-def orders_page():
-    """HTML страница заказов"""
-    orders_html = '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Заказы</title>
-    </head>
-    <body>
-        <h1>📋 Ваши заказы</h1>
-        {% if orders %}
-            <ul>
-            {% for order in orders %}
-                <li>
-                    <strong>Заказ #{{ order.id }}</strong><br>
-                    Сумма: {{ order.total }} руб.<br>
-                    Товаров: {{ order.items|length }}
-                </li>
-            {% endfor %}
-            </ul>
-        {% else %}
-            <p>Заказов пока нет</p>
-        {% endif %}
-        <a href="/">На главную</a>
-    </body>
-    </html>
-    '''
-    return render_template_string(orders_html, orders=orders)
+    # Создаем принтер
+    printer = Printer(
+        id=new_id,
+        name=data['name'],
+        printer_type=data['type'],
+        price=data['price'],
+        color=data['color'],
+        speed=data['speed'],
+        stock=data['stock']
+    )
 
+    printers_db.append(printer)
 
-@app.route('/stats')
-def stats_page():
-    """HTML страница статистики"""
-    stats = get_stats().json
-    return render_template_string('''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Статистика</title>
-        <style>
-            .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
-            .stat-card { border: 1px solid #ccc; padding: 15px; border-radius: 8px; }
-        </style>
-    </head>
-    <body>
-        <h1>📊 Статистика магазина</h1>
-        <div class="stats">
-            <div class="stat-card">
-                <h3>Товары</h3>
-                <p>Всего товаров: {{ stats.total_products }}</p>
-            </div>
-            <div class="stat-card">
-                <h3>Продажи</h3>
-                <p>Всего заказов: {{ stats.total_orders }}</p>
-                <p>Выручка: {{ stats.total_revenue }} руб.</p>
-                <p>Продано единиц: {{ stats.total_items_sold }}</p>
-            </div>
-            <div class="stat-card">
-                <h3>Аналитика</h3>
-                <p>Популярная категория: {{ stats.most_popular_category }}</p>
-                <p>Средний чек: {{ stats.average_order_value }} руб.</p>
-            </div>
-        </div>
-        <a href="/">На главную</a>
-    </body>
-    </html>
-    ''', stats=stats)
-
+    return jsonify({
+        'message': 'Принтер добавлен',
+        'printer': printer.to_dict()
+    }), 201
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -1,8 +1,10 @@
+"""
+Интеграционные тесты API магазина принтеров
+"""
+
 import pytest
 import json
-from app import app, products, cart, orders
-from models import Product
-
+from app import app, printers_db, carts, orders
 
 @pytest.fixture
 def client():
@@ -10,202 +12,246 @@ def client():
     app.config['TESTING'] = True
 
     # Сохраняем исходное состояние
-    original_products = products.copy()
-    original_cart_items = cart.items.copy()
+    original_printers = printers_db.copy()
+    original_carts = carts.copy()
     original_orders = orders.copy()
 
     with app.test_client() as client:
+        # Сбрасываем глобальные переменные
+        carts.clear()
+        orders.clear()
         yield client
 
-    # Восстанавливаем исходное состояние после каждого теста
-    products.clear()
-    products.extend(original_products)
+    # Восстанавливаем исходное состояние
+    printers_db.clear()
+    printers_db.extend(original_printers)
 
-    cart.items.clear()
-    cart.items.extend(original_cart_items)
+    carts.clear()
+    carts.update(original_carts)
 
     orders.clear()
     orders.extend(original_orders)
 
-
-class TestAppIntegration:
-    """Интеграционные тесты Flask приложения"""
+class TestPrinterStoreAPI:
+    """Тесты API магазина принтеров"""
 
     def test_home_page(self, client):
         """Тест главной страницы"""
         response = client.get('/')
         assert response.status_code == 200
-        assert b'Онлайн магазин' in response.data
+        # Используем английский текст для проверки
+        assert b'PrintMaster' in response.data
 
-    def test_get_products(self, client):
-        """Тест получения списка товаров"""
-        response = client.get('/api/products')
+    def test_get_all_printers(self, client):
+        """Тест получения всех принтеров"""
+        response = client.get('/api/printers')
         assert response.status_code == 200
 
         data = response.get_json()
         assert isinstance(data, list)
-        assert len(data) == 5
+        assert len(data) == 7  # У нас 7 принтеров в базе
 
-        # Проверяем структуру первого товара
-        first_product = data[0]
-        assert 'id' in first_product
-        assert 'name' in first_product
-        assert 'price' in first_product
-        assert 'category' in first_product
-        assert 'stock' in first_product
+        # Проверяем структуру первого принтера
+        first_printer = data[0]
+        required_fields = ['id', 'name', 'type', 'price', 'color', 'speed', 'stock']
+        for field in required_fields:
+            assert field in first_printer
 
-    def test_get_product_by_id(self, client):
-        """Тест получения товара по ID"""
-        response = client.get('/api/products/1')
+    def test_get_printer_by_id(self, client):
+        """Тест получения принтера по ID"""
+        response = client.get('/api/printers/1')
         assert response.status_code == 200
 
-        product = response.get_json()
-        assert product['id'] == 1
-        assert product['name'] == "Ноутбук Dell XPS"
+        printer = response.get_json()
+        assert printer['id'] == 1
+        assert 'HP' in printer['name']
+        assert printer['type'] == "laser"
 
-    def test_get_nonexistent_product(self, client):
-        """Тест получения несуществующего товара"""
-        response = client.get('/api/products/999')
+    def test_get_nonexistent_printer(self, client):
+        """Тест получения несуществующего принтера"""
+        response = client.get('/api/printers/999')
         assert response.status_code == 404
+        assert 'error' in response.get_json()
+
+    def test_get_printers_by_type(self, client):
+        """Тест получения принтеров по типу"""
+        response = client.get('/api/printers/type/laser')
+        assert response.status_code == 200
 
         data = response.get_json()
-        assert 'error' in data
+        assert isinstance(data, list)
 
-    def test_add_new_product(self, client):
-        """Тест добавления нового товара"""
-        new_product = {
-            'name': 'Новый товар',
-            'price': 5000,
-            'category': 'тест',
-            'stock': 10
-        }
+        # Проверяем, что все принтеры лазерные
+        for printer in data:
+            assert printer['type'] == 'laser'
 
-        response = client.post('/api/products',
-                               data=json.dumps(new_product),
-                               content_type='application/json')
-
-        assert response.status_code == 201
+    def test_get_available_printers(self, client):
+        """Тест получения только доступных принтеров"""
+        response = client.get('/api/printers/available')
+        assert response.status_code == 200
 
         data = response.get_json()
-        assert data['message'] == 'Товар добавлен'
-        assert data['product']['name'] == 'Новый товар'
-        assert data['product']['price'] == 5000
 
-        # Проверить, что товар действительно добавился
-        response = client.get('/api/products')
-        products_list = response.get_json()
-        assert len(products_list) == 6
+        # Проверяем, что все принтеры в наличии
+        for printer in data:
+            assert printer['stock'] > 0
 
-    def test_add_product_invalid_data(self, client):
-        """Тест добавления товара с невалидными данными"""
-        response = client.post('/api/products',
-                               data=json.dumps({'name': 'Только имя'}),
-                               content_type='application/json')
+        # Принтер с ID 4 должен отсутствовать (stock = 0)
+        printer_ids = [p['id'] for p in data]
+        assert 4 not in printer_ids
 
+    def test_search_printers(self, client):
+        """Тест поиска принтеров"""
+        # Поиск по бренду HP
+        response = client.get('/api/search?q=hp')
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert len(data) >= 1
+        assert any('HP' in printer['name'] for printer in data)
+
+    def test_search_empty_query(self, client):
+        """Тест поиска с пустым запросом"""
+        response = client.get('/api/search?q=')
         assert response.status_code == 400
-        data = response.get_json()
-        assert 'error' in data
+        assert 'error' in response.get_json()
 
-    def test_get_empty_cart(self, client):
-        """Тест получения пустой корзины"""
-        response = client.get('/api/cart')
+    def test_cart_operations(self, client):
+        """Тест операций с корзиной"""
+        user_id = 100
+
+        # 1. Получить пустую корзину
+        response = client.get(f'/api/cart/{user_id}')
         assert response.status_code == 200
 
         cart_data = response.get_json()
+        assert cart_data['user_id'] == user_id
         assert cart_data['items'] == []
         assert cart_data['total'] == 0
-        assert cart_data['item_count'] == 0
 
-    def test_add_to_cart(self, client):
-        """Тест добавления товара в корзину"""
-        # Добавляем товар в корзину
+        # 2. Добавить принтер в корзину
         response = client.post('/api/cart/add',
-                               data=json.dumps({'product_id': 1, 'quantity': 2}),
-                               content_type='application/json')
+                             data=json.dumps({
+                                 'user_id': user_id,
+                                 'printer_id': 1,
+                                 'quantity': 2
+                             }),
+                             content_type='application/json')
 
         assert response.status_code == 200
-
         data = response.get_json()
-        assert data['message'] == 'Товар добавлен в корзину'
-        assert len(data['cart']['items']) == 1
-        assert data['cart']['items'][0]['product_id'] == 1
-        assert data['cart']['items'][0]['quantity'] == 2
+        assert 'message' in data
+        assert len(data['cart']) == 1
+        assert data['cart'][0]['printer_id'] == 1
+        assert data['cart'][0]['quantity'] == 2
 
-        # Проверить через GET запрос
-        response = client.get('/api/cart')
+        # 3. Проверить корзину через GET
+        response = client.get(f'/api/cart/{user_id}')
         cart_data = response.get_json()
-        assert cart_data['total'] == 300000  # 150000 * 2
+        assert cart_data['total'] == 50000  # 25000 * 2
 
-    def test_add_nonexistent_to_cart(self, client):
-        """Тест добавления несуществующего товара в корзину"""
-        response = client.post('/api/cart/add',
-                               data=json.dumps({'product_id': 999}),
-                               content_type='application/json')
-
-        assert response.status_code == 404
-
-    def test_add_out_of_stock_to_cart(self, client):
-        """Тест добавления отсутствующего товара в корзину"""
-        # Товар с ID 3 имеет stock = 5, попробуем добавить 10
-        response = client.post('/api/cart/add',
-                               data=json.dumps({'product_id': 3, 'quantity': 10}),
-                               content_type='application/json')
-
-        assert response.status_code == 400
-
-    def test_remove_from_cart(self, client):
-        """Тест удаления товара из корзины"""
-        # Сначала добавляем товар
-        client.post('/api/cart/add',
-                    data=json.dumps({'product_id': 1}),
-                    content_type='application/json')
-
-        # Удаляем его
+        # 4. Удалить принтер из корзины
         response = client.post('/api/cart/remove',
-                               data=json.dumps({'product_id': 1}),
-                               content_type='application/json')
+                             data=json.dumps({
+                                 'user_id': user_id,
+                                 'printer_id': 1
+                             }),
+                             content_type='application/json')
 
         assert response.status_code == 200
 
-        data = response.get_json()
-        assert data['message'] == 'Товар удален из корзины'
-        assert data['cart']['items'] == []
-
-    def test_checkout(self, client):
-        """Тест оформления заказа"""
-        # Добавляем товар в корзину
-        client.post('/api/cart/add',
-                    data=json.dumps({'product_id': 1, 'quantity': 1}),
-                    content_type='application/json')
-
-        # Оформляем заказ
-        response = client.post('/api/checkout')
-        assert response.status_code == 200
-
-        data = response.get_json()
-        assert data['message'] == 'Заказ оформлен'
-        assert data['order']['total'] == 150000
-
-        # Проверить, что корзина очистилась
-        response = client.get('/api/cart')
+        # 5. Проверить, что корзина пуста
+        response = client.get(f'/api/cart/{user_id}')
         cart_data = response.get_json()
         assert cart_data['items'] == []
 
-        # Проверить, что заказ добавился в список
+    def test_add_nonexistent_printer_to_cart(self, client):
+        """Тест добавления несуществующего принтера в корзину"""
+        response = client.post('/api/cart/add',
+                             data=json.dumps({
+                                 'user_id': 1,
+                                 'printer_id': 999
+                             }),
+                             content_type='application/json')
+
+        assert response.status_code == 404
+
+    def test_add_out_of_stock_printer_to_cart(self, client):
+        """Тест добавления отсутствующего принтера в корзину"""
+        # Принтер с ID 4 имеет stock = 0
+        response = client.post('/api/cart/add',
+                             data=json.dumps({
+                                 'user_id': 1,
+                                 'printer_id': 4,
+                                 'quantity': 1
+                             }),
+                             content_type='application/json')
+
+        assert response.status_code == 400
+
+    def test_checkout_flow(self, client):
+        """Тест полного процесса оформления заказа"""
+        user_id = 200
+
+        # 1. Получить начальный остаток
+        response = client.get('/api/printers/1')
+        initial_stock = response.get_json()['stock']
+
+        # 2. Добавить в корзину
+        response = client.post('/api/cart/add',
+                             data=json.dumps({
+                                 'user_id': user_id,
+                                 'printer_id': 1,
+                                 'quantity': 1
+                             }),
+                             content_type='application/json')
+        assert response.status_code == 200
+
+        # 3. Оформить заказ
+        response = client.post('/api/checkout',
+                             data=json.dumps({'user_id': user_id}),
+                             content_type='application/json')
+
+        assert response.status_code == 200
+
+        data = response.get_json()
+        assert 'message' in data
+        assert data['order']['user_id'] == user_id
+        assert data['order']['total'] == 25000
+
+        # 4. Проверить, что остаток уменьшился
+        response = client.get('/api/printers/1')
+        final_stock = response.get_json()['stock']
+        assert final_stock == initial_stock - 1
+
+        # 5. Проверить, что корзина очистилась
+        response = client.get(f'/api/cart/{user_id}')
+        cart_data = response.get_json()
+        assert cart_data['items'] == []
+
+        # 6. Проверить, что заказ в списке
         response = client.get('/api/orders')
         orders_list = response.get_json()
         assert len(orders_list) == 1
 
     def test_checkout_empty_cart(self, client):
         """Тест оформления пустой корзины"""
-        response = client.post('/api/checkout')
+        response = client.post('/api/checkout',
+                             data=json.dumps({'user_id': 999}),
+                             content_type='application/json')
+
         assert response.status_code == 400
 
     def test_get_orders(self, client):
         """Тест получения списка заказов"""
-        # Создаем заказ
-        client.post('/api/cart/add', json={'product_id': 1})
-        client.post('/api/checkout')
+        # Сначала создаем заказ
+        user_id = 300
+        client.post('/api/cart/add',
+                   data=json.dumps({'user_id': user_id, 'printer_id': 1}),
+                   content_type='application/json')
+        client.post('/api/checkout',
+                   data=json.dumps({'user_id': user_id}),
+                   content_type='application/json')
 
         response = client.get('/api/orders')
         assert response.status_code == 200
@@ -214,54 +260,77 @@ class TestAppIntegration:
         assert isinstance(orders_list, list)
         assert len(orders_list) == 1
 
+    def test_get_order_by_id(self, client):
+        """Тест получения заказа по ID"""
+        # Создаем заказ
+        user_id = 400
+        client.post('/api/cart/add',
+                   data=json.dumps({'user_id': user_id, 'printer_id': 1}),
+                   content_type='application/json')
+        response = client.post('/api/checkout',
+                             data=json.dumps({'user_id': user_id}),
+                             content_type='application/json')
+
+        order_id = response.get_json()['order']['order_id']
+
+        # Получаем заказ по ID
+        response = client.get(f'/api/orders/{order_id}')
+        assert response.status_code == 200
+
+        order = response.get_json()
+        assert order['order_id'] == order_id
+
     def test_get_stats(self, client):
         """Тест получения статистики"""
-        # Создаем заказ для статистики
-        client.post('/api/cart/add', json={'product_id': 1})
-        client.post('/api/checkout')
-
         response = client.get('/api/stats')
         assert response.status_code == 200
 
         stats = response.get_json()
-        assert 'total_products' in stats
-        assert 'total_orders' in stats
-        assert 'total_revenue' in stats
-        assert 'most_popular_category' in stats
-        assert stats['total_orders'] == 1
-        assert stats['total_revenue'] == 150000
+        required_fields = [
+            'store_name', 'total_printers', 'available_printers',
+            'total_stock', 'total_orders', 'total_revenue',
+            'type_statistics', 'most_popular_type', 'average_order_value'
+        ]
 
-    def test_html_pages(self, client):
-        """Тест HTML страниц"""
-        # Страница корзины
-        response = client.get('/cart')
-        assert response.status_code == 200
-        assert response.content_type == 'text/html; charset=utf-8'
+        for field in required_fields:
+            assert field in stats
 
-        # Страница заказов
-        response = client.get('/orders')
-        assert response.status_code == 200
+        assert stats['store_name'] == 'PrintMaster'
+        assert stats['total_printers'] == 7
 
-        # Страница статистики
-        response = client.get('/stats')
-        assert response.status_code == 200
+    def test_add_new_printer(self, client):
+        """Тест добавления нового принтера"""
+        new_printer = {
+            'name': 'Test Printer X1000',
+            'type': 'laser',
+            'price': 30000,
+            'color': True,
+            'speed': 45,
+            'stock': 10
+        }
 
-    def test_stock_updates_after_checkout(self, client):
-        """Тест обновления запасов после оформления заказа"""
-        # Получаем начальный запас
-        response = client.get('/api/products/1')
-        initial_stock = response.get_json()['stock']
+        response = client.post('/api/admin/add_printer',
+                             data=json.dumps(new_printer),
+                             content_type='application/json')
 
-        # Добавляем в корзину и оформляем
-        client.post('/api/cart/add', json={'product_id': 1, 'quantity': 2})
-        client.post('/api/checkout')
+        assert response.status_code == 201
 
-        # Проверяем что запас уменьшился
-        response = client.get('/api/products/1')
-        final_stock = response.get_json()['stock']
+        data = response.get_json()
+        assert data['message'] == 'Принтер добавлен'
+        assert data['printer']['name'] == 'Test Printer X1000'
 
-        assert final_stock == initial_stock - 2
+        # Проверить, что принтер действительно добавлен
+        response = client.get('/api/printers')
+        printers = response.get_json()
+        assert len(printers) == 8  # Было 7, стало 8
 
+    def test_add_printer_invalid_data(self, client):
+        """Тест добавления принтера с невалидными данными"""
+        response = client.post('/api/admin/add_printer',
+                             data=json.dumps({'name': 'Test'}),
+                             content_type='application/json')
+
+        assert response.status_code == 400
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

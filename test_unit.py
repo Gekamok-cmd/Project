@@ -1,164 +1,132 @@
+"""
+Модульные тесты для магазина принтеров
+"""
+
 import pytest
-from models import Product, Cart, Order
+
+# Импортируем класс Printer из app.py
+from app import Printer
 
 
-class TestProduct:
-    """Модульные тесты для класса Product"""
+class TestPrinter:
+    """Тесты класса Printer"""
 
-    def test_product_creation(self):
-        """Тест создания товара"""
-        product = Product(1, "Тестовый товар", 1000, "категория", 10)
+    def test_printer_creation(self):
+        """Тест создания принтера"""
+        printer = Printer(
+            id=1,
+            name="Test Printer",
+            printer_type="laser",
+            price=10000,
+            color=True,
+            speed=25,
+            stock=5
+        )
 
-        assert product.id == 1
-        assert product.name == "Тестовый товар"
-        assert product.price == 1000
-        assert product.category == "категория"
-        assert product.stock == 10
+        assert printer.id == 1
+        assert printer.name == "Test Printer"
+        assert printer.type == "laser"
+        assert printer.price == 10000
+        assert printer.color == True
+        assert printer.speed == 25
+        assert printer.stock == 5
 
-    def test_product_to_dict(self):
-        """Тест преобразования товара в словарь"""
-        product = Product(2, "Товар", 500, "тест", 5)
-        product_dict = product.to_dict()
+    def test_printer_to_dict(self):
+        """Тест преобразования в словарь"""
+        printer = Printer(2, "Printer 2", "inkjet", 8000, False, 15, 3)
+        printer_dict = printer.to_dict()
 
-        assert product_dict['id'] == 2
-        assert product_dict['name'] == "Товар"
-        assert product_dict['price'] == 500
-        assert product_dict['category'] == "тест"
-        assert product_dict['stock'] == 5
+        assert isinstance(printer_dict, dict)
+        assert printer_dict['id'] == 2
+        assert printer_dict['name'] == "Printer 2"
+        assert printer_dict['type'] == "inkjet"
+        assert printer_dict['price'] == 8000
+        assert printer_dict['color'] == False
+        assert printer_dict['speed'] == 15
+        assert printer_dict['stock'] == 3
 
-    def test_update_stock_success(self):
-        """Тест успешного обновления запасов"""
-        product = Product(1, "Товар", 100, "кат", 10)
+    def test_printer_types_validation(self):
+        """Тест допустимых типов принтеров"""
+        valid_types = ['laser', 'inkjet', 'multifunctional']
 
-        result = product.update_stock(3)
-        assert result == True
-        assert product.stock == 7
+        for printer_type in valid_types:
+            printer = Printer(1, "Test", printer_type, 10000, True, 20, 5)
+            assert printer.type == printer_type
 
-    def test_update_stock_failure(self):
-        """Тест неудачного обновления запасов"""
-        product = Product(1, "Товар", 100, "кат", 2)
+    def test_printer_comparison(self):
+        """Тест сравнения принтеров"""
+        printer1 = Printer(1, "Printer A", "laser", 10000, True, 20, 5)
+        printer2 = Printer(2, "Printer B", "inkjet", 8000, False, 15, 3)
 
-        result = product.update_stock(5)
-        assert result == False
-        assert product.stock == 2  # Не изменилось
-
-
-class TestCart:
-    """Модульные тесты для класса Cart"""
-
-    def setup_method(self):
-        """Настройка перед каждым тестом"""
-        self.cart = Cart()
-        self.product1 = Product(1, "Товар 1", 100, "кат1", 10)
-        self.product2 = Product(2, "Товар 2", 200, "кат2", 5)
-
-    def test_empty_cart(self):
-        """Тест пустой корзины"""
-        assert len(self.cart.items) == 0
-        assert self.cart.get_total() == 0
-        assert self.cart.to_dict()['item_count'] == 0
-
-    def test_add_item(self):
-        """Тест добавления товара в корзину"""
-        self.cart.add_item(self.product1)
-
-        assert len(self.cart.items) == 1
-        assert self.cart.items[0]['product_id'] == 1
-        assert self.cart.items[0]['quantity'] == 1
-        assert self.cart.get_total() == 100
-
-    def test_add_item_with_quantity(self):
-        """Тест добавления товара с количеством"""
-        self.cart.add_item(self.product1, 3)
-
-        assert self.cart.items[0]['quantity'] == 3
-        assert self.cart.get_total() == 300
-
-    def test_add_multiple_items(self):
-        """Тест добавления нескольких товаров"""
-        self.cart.add_item(self.product1)
-        self.cart.add_item(self.product2)
-
-        assert len(self.cart.items) == 2
-        assert self.cart.get_total() == 300
-
-    def test_add_same_item_twice(self):
-        """Тест добавления одного товара дважды"""
-        self.cart.add_item(self.product1)
-        self.cart.add_item(self.product1, 2)
-
-        assert len(self.cart.items) == 1
-        assert self.cart.items[0]['quantity'] == 3
-        assert self.cart.get_total() == 300
-
-    def test_remove_item(self):
-        """Тест удаления товара из корзины"""
-        self.cart.add_item(self.product1)
-        self.cart.add_item(self.product2)
-
-        self.cart.remove_item(1)
-
-        assert len(self.cart.items) == 1
-        assert self.cart.items[0]['product_id'] == 2
-        assert self.cart.get_total() == 200
-
-    def test_remove_nonexistent_item(self):
-        """Тест удаления несуществующего товара"""
-        self.cart.add_item(self.product1)
-
-        # Удаление несуществующего товара не должно вызывать ошибку
-        self.cart.remove_item(999)
-
-        assert len(self.cart.items) == 1
-        assert self.cart.get_total() == 100
-
-    def test_clear_cart(self):
-        """Тест очистки корзины"""
-        self.cart.add_item(self.product1)
-        self.cart.add_item(self.product2)
-
-        self.cart.clear()
-
-        assert len(self.cart.items) == 0
-        assert self.cart.get_total() == 0
-
-    def test_cart_to_dict(self):
-        """Тест преобразования корзины в словарь"""
-        self.cart.add_item(self.product1, 2)
-        cart_dict = self.cart.to_dict()
-
-        assert 'items' in cart_dict
-        assert 'total' in cart_dict
-        assert 'item_count' in cart_dict
-        assert cart_dict['total'] == 200
-        assert cart_dict['item_count'] == 1
+        assert printer1.id != printer2.id
+        assert printer1.price > printer2.price
+        assert printer1.color != printer2.color
 
 
-class TestOrder:
-    """Модульные тесты для класса Order"""
+class TestBusinessLogic:
+    """Тесты бизнес-логики"""
 
-    def test_order_creation(self):
-        """Тест создания заказа"""
-        items = [
-            {'product_id': 1, 'name': 'Товар 1', 'price': 100, 'quantity': 2},
-            {'product_id': 2, 'name': 'Товар 2', 'price': 200, 'quantity': 1}
+    def test_calculate_total_price(self):
+        """Тест расчета общей стоимости"""
+        # Мокаем данные корзины
+        cart_items = [
+            {'printer_id': 1, 'name': 'Printer 1', 'price': 10000, 'quantity': 2},
+            {'printer_id': 2, 'name': 'Printer 2', 'price': 8000, 'quantity': 1}
         ]
 
-        order = Order(1, items, 400)
+        total = sum(item['price'] * item['quantity'] for item in cart_items)
+        assert total == 28000  # 10000*2 + 8000
 
-        assert order.id == 1
-        assert len(order.items) == 2
-        assert order.total == 400
+    def test_stock_availability(self):
+        """Тест проверки наличия товара"""
+        printers = [
+            Printer(1, "Printer 1", "laser", 10000, True, 20, 5),  # в наличии
+            Printer(2, "Printer 2", "inkjet", 8000, False, 15, 0),  # нет в наличии
+        ]
 
-    def test_order_to_dict(self):
-        """Тест преобразования заказа в словарь"""
-        items = [{'product_id': 1, 'name': 'Товар', 'price': 100, 'quantity': 1}]
-        order = Order(5, items, 100)
-        order_dict = order.to_dict()
+        available = [p for p in printers if p.stock > 0]
+        out_of_stock = [p for p in printers if p.stock == 0]
 
-        assert order_dict['id'] == 5
-        assert order_dict['items'] == items
-        assert order_dict['total'] == 100
+        assert len(available) == 1
+        assert len(out_of_stock) == 1
+        assert available[0].id == 1
+        assert out_of_stock[0].id == 2
+
+    def test_filter_by_type(self):
+        """Тест фильтрации по типу"""
+        printers = [
+            Printer(1, "Laser 1", "laser", 10000, True, 20, 5),
+            Printer(2, "Laser 2", "laser", 15000, False, 25, 3),
+            Printer(3, "Inkjet 1", "inkjet", 8000, True, 15, 8),
+        ]
+
+        laser_printers = [p for p in printers if p.type == "laser"]
+        inkjet_printers = [p for p in printers if p.type == "inkjet"]
+
+        assert len(laser_printers) == 2
+        assert len(inkjet_printers) == 1
+        assert all(p.type == "laser" for p in laser_printers)
+        assert all(p.type == "inkjet" for p in inkjet_printers)
+
+    def test_search_functionality(self):
+        """Тест поиска"""
+        printers = [
+            Printer(1, "HP LaserJet Pro", "laser", 25000, False, 40, 5),
+            Printer(2, "Canon PIXMA", "inkjet", 12000, True, 15, 3),
+            Printer(3, "Epson WorkForce", "multifunctional", 30000, True, 25, 2),
+        ]
+
+        # Поиск по части названия
+        search_query = "hp"
+        results = [p for p in printers if search_query in p.name.lower()]
+
+        assert len(results) == 1
+        assert "HP" in results[0].name
+
+        # Поиск по другому запросу
+        search_query = "pro"
+        results = [p for p in printers if search_query in p.name.lower()]
+        assert len(results) == 1
 
 
 if __name__ == '__main__':

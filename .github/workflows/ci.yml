@@ -26,10 +26,6 @@ jobs:
       run: |
         python -m pytest test_integration.py -v
     
-    - name: Run system tests (simplified)
+    - name: Run system tests
       run: |
-        python -m pytest test_system.py::TestSystemThroughClient -v
-    
-    - name: Verify all tests passed
-      run: |
-        echo "✅ Все тесты успешно выполнены!"
+        python -m pytest test_system.py -v
