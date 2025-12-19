@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}{{ circus_name }} - Главная{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <h2>Добро пожаловать в {{ circus_name }}!</h2>
+    <p>У нас выступают лучшие артисты со всего мира</p>
+</div>
+
+<div class="stats-overview">
+    <div class="stat-card">
+        <i class="fas fa-users"></i>
+        <h3>{{ total_performers }}</h3>
+        <p>Всего артистов</p>
+    </div>
+    <div class="stat-card">
+        <i class="fas fa-star"></i>
+        <h3>{{ performers|selectattr('skill_level', '>=', 8)|list|length }}</h3>
+        <p>Звезд цирка</p>
+    </div>
+    <div class="stat-card">
+        <i class="fas fa-check-circle"></i>
+        <h3>{{ performers|selectattr('is_available')|list|length }}</h3>
+        <p>Доступно сейчас</p>
+    </div>
+</div>
+
+<h2 class="section-title">Наши артисты</h2>
+<div class="performers-grid">
+    {% for performer in performers %}
+    <div class="performer-card {% if not performer.is_available %}unavailable{% endif %}">
+        <div class="performer-header">
+            <h3>{{ performer.name }}</h3>
+            <span class="role-badge">{{ performer.role }}</span>
+        </div>
+        <div class="performer-details">
+            <p><i class="fas fa-chart-line"></i> Уровень навыка: {{ performer.skill_level }}/10</p>
+            <p><i class="fas fa-{% if performer.is_available %}check{% else %}times{% endif %}"></i> 
+                {{ 'Доступен' if performer.is_available else 'Не доступен' }}
+            </p>
+        </div>
+        <div class="performer-actions">
+            <a href="/performer/{{ loop.index0 }}" class="btn">Подробнее</a>
+            <button class="btn-toggle" onclick="togglePerformer({{ loop.index0 }})">
+                {{ 'Скрыть' if performer.is_available else 'Показать' }}
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="add-performer-form">
+    <h3>Добавить нового артиста</h3>
+    <form id="addPerformerForm">
+        <input type="text" id="name" placeholder="Имя артиста" required>
+        <input type="text" id="role" placeholder="Роль (клоун, акробат...)" required>
+        <input type="number" id="skill" placeholder="Уровень навыка" min="1" max="10" value="5">
+        <button type="submit" class="btn">Добавить артиста</button>
+    </form>
+</div>
+{% endblock %}
