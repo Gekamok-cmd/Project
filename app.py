@@ -9,7 +9,7 @@ app = Flask(__name__)
 # ==================== МОДЕЛИ ====================
 
 class Printer:
-    """Класс принтера"""
+
     def __init__(self, id, name, printer_type, price, color, speed, stock):
         self.id = id
         self.name = name
@@ -55,7 +55,7 @@ order_counter = 1
 
 @app.route('/')
 def home():
-    """Главная страница"""
+
     return '''
     <h1>🖨️ PrintMaster Printer Store</h1>
     <p>Best printers at best prices!</p>
@@ -83,7 +83,7 @@ def home():
 
 @app.route('/api/printers', methods=['GET'])
 def get_printers():
-    """Получить все принтеры"""
+
     return jsonify([printer.to_dict() for printer in printers_db])
 
 @app.route('/api/printers/<int:printer_id>', methods=['GET'])
@@ -96,19 +96,19 @@ def get_printer(printer_id):
 
 @app.route('/api/printers/type/<string:printer_type>', methods=['GET'])
 def get_printers_by_type(printer_type):
-    """Получить принтеры по типу"""
+
     filtered = [p for p in printers_db if p.type == printer_type]
     return jsonify([p.to_dict() for p in filtered])
 
 @app.route('/api/printers/available', methods=['GET'])
 def get_available_printers():
-    """Получить только принтеры в наличии"""
+
     available = [p for p in printers_db if p.stock > 0]
     return jsonify([p.to_dict() for p in available])
 
 @app.route('/api/search', methods=['GET'])
 def search_printers():
-    """Поиск принтеров по названию"""
+
     query = request.args.get('q', '').lower()
     if not query:
         return jsonify({'error': 'Укажите поисковый запрос'}), 400
@@ -118,7 +118,7 @@ def search_printers():
 
 @app.route('/api/cart/<int:user_id>', methods=['GET'])
 def get_cart(user_id):
-    """Получить корзину пользователя"""
+
     if user_id not in carts:
         carts[user_id] = []
 
@@ -134,7 +134,7 @@ def get_cart(user_id):
 
 @app.route('/api/cart/add', methods=['POST'])
 def add_to_cart():
-    """Добавить принтер в корзину"""
+
     data = request.get_json()
 
     # Проверка данных
